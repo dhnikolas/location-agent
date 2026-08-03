@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/reconcile-kit/api v0.0.16
 	github.com/reconcile-kit/controlloop v0.0.16
-	github.com/reconcile-kit/runtime-manager v0.0.16
+	github.com/reconcile-kit/runtime-manager v0.0.17
 	scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.1
 	scm.x5.ru/dis.cloud/core/provision-agent v0.0.3
 )
@@ -19,7 +19,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/reconcile-kit/redis-informer-provider v0.0.7 // indirect
+	github.com/reconcile-kit/redis-informer-provider v0.0.8 // indirect
 	github.com/reconcile-kit/state-manager-provider v0.0.9 // indirect
 	github.com/redis/go-redis/v9 v9.18.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

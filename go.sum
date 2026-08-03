@@ -49,10 +49,10 @@ github.com/reconcile-kit/api v0.0.16 h1:152T1I+7MUc8MHv0fN1m7GI1ay5RZhVdHJdtszuA
 github.com/reconcile-kit/api v0.0.16/go.mod h1:XUUXZvlt5fGlY8LMNmfbeFBZhmoPPj6fJ8mqcdW6Ya8=
 github.com/reconcile-kit/controlloop v0.0.16 h1:5e1dYGGtriLzYk1BQFhDcIdgoy58qAqJMKlCM/OuCUw=
 github.com/reconcile-kit/controlloop v0.0.16/go.mod h1:2v8Yqca1V8j6TQOodto0PaNyqtj8JREheJQcCK+Ul7s=
-github.com/reconcile-kit/redis-informer-provider v0.0.7 h1:8TfVctlSAJRPaKMzO2CLSXg4Xexmr1L0moBQkn+FmKk=
-github.com/reconcile-kit/redis-informer-provider v0.0.7/go.mod h1:ynZ/mQw76ibSpE071otFzwVLAPWD5s3uiV/Me/4D2KU=
-github.com/reconcile-kit/runtime-manager v0.0.16 h1:ap16xb0jdtnr2YLefLoj+cIOWdDk/nBkam5k2tizbQo=
-github.com/reconcile-kit/runtime-manager v0.0.16/go.mod h1:3Q9l4QpbGr0hgGuvU4Ei+O/1HF9Bc0E7aTKGyoVLau8=
+github.com/reconcile-kit/redis-informer-provider v0.0.8 h1:uN+BgESWK4c/WQIJyPWHQrVMLoSWvAZzPe3+Gxom+9Q=
+github.com/reconcile-kit/redis-informer-provider v0.0.8/go.mod h1:ynZ/mQw76ibSpE071otFzwVLAPWD5s3uiV/Me/4D2KU=
+github.com/reconcile-kit/runtime-manager v0.0.17 h1:iJORjwO2GWnJm6CEvrfg7ySyi8lX6SSAuV0C73UXprA=
+github.com/reconcile-kit/runtime-manager v0.0.17/go.mod h1:m/FIYEySUw2OIKIy5qILDTlxEGfSkjIrHH/zxLuye9M=
 github.com/reconcile-kit/state-manager-provider v0.0.9 h1:/LW/z1na/xhaGub/SlUBZbWBiH/yqxhrlRyY21YVtXA=
 github.com/reconcile-kit/state-manager-provider v0.0.9/go.mod h1:r2JSDee736toIMqBjSU7ks3TEwiYUrHiGogRoXHslT8=
 github.com/redis/go-redis/v9 v9.18.0 h1:pMkxYPkEbMPwRdenAzUNyFNrDgHx9U+DrBabWNfSRQs=

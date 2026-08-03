@@ -34,6 +34,15 @@ const (
 	LabelLocation = Group + "/location"
 	LabelSpecHash = Group + "/spec-hash"
 	LabelPort     = Group + "/port."
+
+	// LabelPlatform carries the shard this machine answers to — the same value
+	// as LabelLocation, under a key short enough to type.
+	//
+	// It exists for people and their tools, not for this agent: the qualified
+	// keys above are unambiguous but unusable at a prompt, and
+	// `docker ps --filter label=agent-platform=my-laptop` is what someone
+	// actually wants to run. agentctl finds this machine's boxes with it.
+	LabelPlatform = "agent-platform"
 )
 
 // Port is one published port.
@@ -133,6 +142,7 @@ func Plan(in Input) (Container, error) {
 		Labels: map[string]string{
 			LabelRuntime:  name,
 			LabelLocation: in.Location,
+			LabelPlatform: in.Location,
 		},
 	}
 

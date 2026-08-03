@@ -184,3 +184,24 @@ func TestVolumesAreCreatedUnderTheirRuntime(t *testing.T) {
 		t.Errorf("volume name = %q, want new-dev-home", containers.volumes[0].volume)
 	}
 }
+
+// The short label is what someone types at a prompt, and what agentctl finds
+// this machine's boxes with. The qualified keys stay for the agent itself.
+func TestContainerCarriesTheShortPlatformLabel(t *testing.T) {
+	containers := &fakeContainers{}
+	svc, _ := testService(t, containers)
+
+	if _, err := svc.Ensure(context.Background(), runtimeFor("new-dev")); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if containers.created == nil {
+		t.Fatal("nothing was created")
+	}
+	labels := containers.created.Labels
+	if labels[LabelPlatform] != "nikolai-laptop" {
+		t.Errorf("%s = %q, want the location this machine serves", LabelPlatform, labels[LabelPlatform])
+	}
+	if labels[LabelPlatform] != labels[LabelLocation] {
+		t.Errorf("the two spellings disagree: %q vs %q", labels[LabelPlatform], labels[LabelLocation])
+	}
+}

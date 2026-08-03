@@ -19,6 +19,7 @@ import (
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
 	pa "scm.x5.ru/dis.cloud/core/provision-agent/api"
+	locationctrl "scm.x5.ru/dis.cloud/core/location-agent/internal/controllers/location"
 	runtimectrl "scm.x5.ru/dis.cloud/core/location-agent/internal/controllers/runtime"
 	"scm.x5.ru/dis.cloud/core/location-agent/internal/config"
 	"scm.x5.ru/dis.cloud/core/location-agent/internal/repository/container"
@@ -144,6 +145,15 @@ func startManager(slogger *slog.Logger, wrapLogger *logger.LoggerWrap, cfg confi
 		runtimectrl.NewReconciler[*platform.Runtime](slogger, svc, resources),
 	); err != nil {
 		log.Fatalf("register Runtime controller: %v", err)
+	}
+
+	// The machine reports that it is still here. Nothing else would say so: a
+	// laptop that is closed or taken off the network produces no event, and the
+	// platform would go on placing runtimes on it.
+	if err := rtm.SetController[*platform.Location](mgr,
+		locationctrl.NewReconciler[*platform.Location](slogger, Version),
+	); err != nil {
+		log.Fatalf("register Location controller: %v", err)
 	}
 
 	return mgr
