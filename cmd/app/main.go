@@ -18,15 +18,15 @@ import (
 	rtm "github.com/reconcile-kit/runtime-manager"
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
-	pa "scm.x5.ru/dis.cloud/core/provision-agent/api"
+	"scm.x5.ru/dis.cloud/core/location-agent/internal/config"
 	locationctrl "scm.x5.ru/dis.cloud/core/location-agent/internal/controllers/location"
 	runtimectrl "scm.x5.ru/dis.cloud/core/location-agent/internal/controllers/runtime"
-	"scm.x5.ru/dis.cloud/core/location-agent/internal/config"
 	"scm.x5.ru/dis.cloud/core/location-agent/internal/repository/container"
 	"scm.x5.ru/dis.cloud/core/location-agent/internal/repository/storage"
 	provisionsvc "scm.x5.ru/dis.cloud/core/location-agent/internal/services/provision"
 	runtimesvc "scm.x5.ru/dis.cloud/core/location-agent/internal/services/runtime"
 	"scm.x5.ru/dis.cloud/core/location-agent/pkg/logger"
+	pa "scm.x5.ru/dis.cloud/core/provision-agent/api"
 )
 
 var Version string
@@ -62,7 +62,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	mgr := startManager(slogger, wrapLogger, cfg)
+	mgr, locationReconciler := startManager(slogger, wrapLogger, cfg)
 
 	// runtime-manager Run() is non-blocking — listeners and reconcilers run in
 	// goroutines.
@@ -82,6 +82,14 @@ func main() {
 	// keep the process alive: the lock on the location is held by this process,
 	// so an agent that will not die also blocks its replacement — with a
 	// message that looks like the operator started two by mistake.
+	// Said first, before anything is torn down. Stopping the control loops can
+	// take longer than the grace allowed here — they wait on a listener that
+	// blocks for up to a minute — and a goodbye queued behind that never gets
+	// sent at all.
+	if err := locationReconciler.Farewell(shutdownCtx, cfg.ShardID); err != nil {
+		slogger.Error("say goodbye to the platform", "location", cfg.ShardID, "error", err)
+	}
+
 	done := make(chan error, 1)
 	go func() { done <- mgr.Shutdown(shutdownCtx) }()
 
@@ -97,7 +105,14 @@ func main() {
 	}
 }
 
-func startManager(slogger *slog.Logger, wrapLogger *logger.LoggerWrap, cfg config.Config) *rtm.Manager {
+// startManager wires the controllers. The location reconciler comes back with
+// the manager because shutdown needs it: it is what tells the platform this
+// machine is going away.
+func startManager(
+	slogger *slog.Logger,
+	wrapLogger *logger.LoggerWrap,
+	cfg config.Config,
+) (*rtm.Manager, *locationctrl.Reconciler[*platform.Location]) {
 	opts := []rtm.Option{rtm.WithLogger(wrapLogger)}
 	if cfg.InformerUsername != "" || cfg.InformerPassword != "" || cfg.InformerTLS {
 		opts = append(opts, rtm.WithInformerAuthConfig(&rtm.InformerAuthConfig{
@@ -150,13 +165,12 @@ func startManager(slogger *slog.Logger, wrapLogger *logger.LoggerWrap, cfg confi
 	// The machine reports that it is still here. Nothing else would say so: a
 	// laptop that is closed or taken off the network produces no event, and the
 	// platform would go on placing runtimes on it.
-	if err := rtm.SetController[*platform.Location](mgr,
-		locationctrl.NewReconciler[*platform.Location](slogger, Version),
-	); err != nil {
+	locationReconciler := locationctrl.NewReconciler[*platform.Location](slogger, Version)
+	if err := rtm.SetController[*platform.Location](mgr, locationReconciler); err != nil {
 		log.Fatalf("register Location controller: %v", err)
 	}
 
-	return mgr
+	return mgr, locationReconciler
 }
 
 // agentEnv is what every runtime's own agent needs to reach the same control
