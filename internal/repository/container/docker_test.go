@@ -192,3 +192,31 @@ func TestIsNotFound(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// A host directory and a named volume are the same flag to docker, told apart
+// by the leading slash. Getting the source wrong here produces a container that
+// silently mounts a brand-new empty volume called "/Users/..." instead of the
+// user's directory.
+func TestRunArgsBindsHostDirectories(t *testing.T) {
+	c := runtimesvc.Container{
+		Name:  "box",
+		Image: "claude-box:latest",
+		Mounts: []runtimesvc.Mount{
+			{Volume: "box-home", Path: "/home/dev"},
+			{Host: "/Users/dev/code", Path: "/work/code"},
+			{Host: "/Users/dev/docs", Path: "/work/docs", ReadOnly: true},
+		},
+	}
+
+	args := RunArgs(c, "127.0.0.1")
+
+	if !contains(args, "--volume", "/Users/dev/code:/work/code") {
+		t.Errorf("host directory not bound: %s", argsString(args))
+	}
+	if !contains(args, "--volume", "/Users/dev/docs:/work/docs:ro") {
+		t.Errorf("read-only host directory not bound: %s", argsString(args))
+	}
+	if !contains(args, "--volume", "box-home:/home/dev") {
+		t.Errorf("the named volume was lost: %s", argsString(args))
+	}
+}

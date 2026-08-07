@@ -18,9 +18,11 @@ import (
 	rtm "github.com/reconcile-kit/runtime-manager"
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
+	agentapi "scm.x5.ru/dis.cloud/core/location-agent/api"
 	"scm.x5.ru/dis.cloud/core/location-agent/internal/config"
 	locationctrl "scm.x5.ru/dis.cloud/core/location-agent/internal/controllers/location"
 	runtimectrl "scm.x5.ru/dis.cloud/core/location-agent/internal/controllers/runtime"
+	volumemountctrl "scm.x5.ru/dis.cloud/core/location-agent/internal/controllers/volumemount"
 	"scm.x5.ru/dis.cloud/core/location-agent/internal/repository/container"
 	"scm.x5.ru/dis.cloud/core/location-agent/internal/repository/storage"
 	provisionsvc "scm.x5.ru/dis.cloud/core/location-agent/internal/services/provision"
@@ -138,7 +140,7 @@ func startManager(
 		log.Fatalf("register Provision remote client: %v", err)
 	}
 
-	resources := storage.New()
+	resources := storage.New(cfg.ShardID)
 
 	var containers runtimesvc.ContainerRepository = container.NewDocker(cfg.DockerBinary, cfg.BindAddress, slogger)
 	if cfg.DryRun {
@@ -160,6 +162,15 @@ func startManager(
 		runtimectrl.NewReconciler[*platform.Runtime](slogger, svc, resources),
 	); err != nil {
 		log.Fatalf("register Runtime controller: %v", err)
+	}
+
+	// Host directories are asked for next to the runtime, in the same shard, so
+	// they are watched rather than fetched: this agent is the only thing that
+	// can act on one.
+	if err := rtm.SetController[*agentapi.VolumeMount](mgr,
+		volumemountctrl.NewReconciler[*agentapi.VolumeMount](slogger, containers),
+	); err != nil {
+		log.Fatalf("register VolumeMount controller: %v", err)
 	}
 
 	// The machine reports that it is still here. Nothing else would say so: a

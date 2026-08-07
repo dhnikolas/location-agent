@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
+	agentapi "scm.x5.ru/dis.cloud/core/location-agent/api"
 	pa "scm.x5.ru/dis.cloud/core/provision-agent/api"
 )
 
@@ -60,7 +61,10 @@ func (f *fakeContainers) Remove(_ context.Context, name string, purge bool) erro
 	return nil
 }
 
-type fakeResources struct{ tpl *platform.RuntimeTemplate }
+type fakeResources struct {
+	tpl    *platform.RuntimeTemplate
+	mounts []*agentapi.VolumeMount
+}
 
 func (f fakeResources) RuntimeTemplate(context.Context, string) (*platform.RuntimeTemplate, bool, error) {
 	return f.tpl, f.tpl != nil, nil
@@ -68,6 +72,10 @@ func (f fakeResources) RuntimeTemplate(context.Context, string) (*platform.Runti
 
 func (f fakeResources) UserConfig(context.Context, string) (*pa.UserConfig, bool, error) {
 	return nil, false, nil
+}
+
+func (f fakeResources) VolumeMounts(context.Context, string, string) ([]*agentapi.VolumeMount, error) {
+	return f.mounts, nil
 }
 
 type fakeProvision struct{ removed []string }

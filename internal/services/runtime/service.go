@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
+	agentapi "scm.x5.ru/dis.cloud/core/location-agent/api"
 	pa "scm.x5.ru/dis.cloud/core/provision-agent/api"
 )
 
@@ -16,6 +17,9 @@ import (
 type ResourceRepository interface {
 	RuntimeTemplate(ctx context.Context, name string) (*platform.RuntimeTemplate, bool, error)
 	UserConfig(ctx context.Context, name string) (*pa.UserConfig, bool, error)
+	// VolumeMounts are the host directories asked for this runtime, which the
+	// runtime itself knows nothing about — they are declared next to it.
+	VolumeMounts(ctx context.Context, namespace, runtime string) ([]*agentapi.VolumeMount, error)
 }
 
 // Observed is a container as it currently exists.
@@ -28,6 +32,10 @@ type Observed struct {
 	Labels  map[string]string
 	// Ports maps a port name to the host port it is published on.
 	Ports map[string]int
+	// Binds maps a path inside the container to the host directory bound
+	// there. Only bind mounts appear — named volumes are not host directories
+	// and nobody asks after them by path.
+	Binds map[string]string
 }
 
 // SpecHash returns the fingerprint the container was created from, or "" when
@@ -123,6 +131,11 @@ func (s *Service) Ensure(ctx context.Context, rt *platform.Runtime) (State, erro
 		return State{}, err
 	}
 
+	hostMounts, err := s.hostMounts(ctx, rt)
+	if err != nil {
+		return State{}, err
+	}
+
 	ports, err := s.assignPorts(ctx, rt.Name, tpl, existing, hasExisting)
 	if err != nil {
 		return State{}, err
@@ -134,6 +147,7 @@ func (s *Service) Ensure(ctx context.Context, rt *platform.Runtime) (State, erro
 		UserConfig: userConfig,
 		Location:   s.cfg.Location,
 		AgentEnv:   s.agentEnv(rt, ports),
+		HostMounts: hostMounts,
 	})
 	if err != nil {
 		return State{}, err
@@ -163,6 +177,12 @@ func (s *Service) Ensure(ctx context.Context, rt *platform.Runtime) (State, erro
 	}
 
 	for _, m := range desired.Mounts {
+		// Only named volumes are ours to create. A host directory already
+		// exists — that is the whole point of one — and a tmpfs is made by
+		// docker at start.
+		if m.Volume == "" {
+			continue
+		}
 		if err := s.containers.EnsureVolume(ctx, rt.Name, m.Volume); err != nil {
 			return State{}, err
 		}
@@ -192,6 +212,33 @@ func (s *Service) Remove(ctx context.Context, rt *platform.Runtime) error {
 	// The Provision outlives nothing: without its runtime it describes a
 	// container that no longer exists.
 	return s.provision.Remove(ctx, rt.Name)
+}
+
+// hostMounts collects the VolumeMounts for this runtime and drops the ones the
+// machine cannot honour.
+//
+// Dropped rather than fatal, because the two failures are not the same size. A
+// box with one directory missing is still a box someone can work in; refusing
+// to reconcile the runtime over it would take the whole thing down over a typo
+// in a resource that was added last. What went wrong is reported on the mount's
+// own resource, which is where someone would look.
+func (s *Service) hostMounts(ctx context.Context, rt *platform.Runtime) ([]*agentapi.VolumeMount, error) {
+	all, err := s.resources.VolumeMounts(ctx, rt.Namespace, rt.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]*agentapi.VolumeMount, 0, len(all))
+	for _, vm := range all {
+		if err := CheckMount(vm.Spec.HostPath, vm.Spec.ContainerPath); err != nil {
+			s.log.Warn("skipping volume mount",
+				"runtime", rt.Name, "volumeMount", vm.Name,
+				"hostPath", vm.Spec.HostPath, "error", err)
+			continue
+		}
+		out = append(out, vm)
+	}
+	return out, nil
 }
 
 // agentEnv is what the runtime's own agent needs, on top of the template's.

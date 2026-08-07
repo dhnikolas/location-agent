@@ -25,9 +25,9 @@ const (
 	// and not the Kubernetes controller.
 	EnvShardID = "SHARD_ID"
 
-	EnvBindAddress = "BIND_ADDRESS"
-	EnvPortMin     = "PORT_MIN"
-	EnvPortMax     = "PORT_MAX"
+	EnvBindAddress  = "BIND_ADDRESS"
+	EnvPortMin      = "PORT_MIN"
+	EnvPortMax      = "PORT_MAX"
 	EnvExternalHost = "EXTERNAL_HOST"
 	EnvDockerBinary = "DOCKER_BINARY"
 	EnvDryRun       = "DRY_RUN"

@@ -56,6 +56,12 @@ type inspected struct {
 		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
+	Mounts []struct {
+		Type        string `json:"Type"`
+		Source      string `json:"Source"`
+		Destination string `json:"Destination"`
+		RW          bool   `json:"RW"`
+	} `json:"Mounts"`
 }
 
 func (d *Docker) Find(ctx context.Context, name string) (runtimesvc.Observed, bool, error) {
@@ -262,7 +268,13 @@ func RunArgs(c runtimesvc.Container, bindAddress string) []string {
 	mounts := append([]runtimesvc.Mount(nil), c.Mounts...)
 	sort.Slice(mounts, func(i, j int) bool { return mounts[i].Path < mounts[j].Path })
 	for _, m := range mounts {
-		spec := m.Volume + ":" + m.Path
+		// A host path and a volume name go in the same place on the command
+		// line: docker tells them apart by the leading slash.
+		source := m.Volume
+		if m.Host != "" {
+			source = m.Host
+		}
+		spec := source + ":" + m.Path
 		if m.ReadOnly {
 			spec += ":ro"
 		}
@@ -313,6 +325,17 @@ func parseInspect(out string) (runtimesvc.Observed, error) {
 		Running: in.State.Running,
 		Labels:  in.Config.Labels,
 		Ports:   map[string]int{},
+		Binds:   map[string]string{},
+	}
+	// Bind mounts are read back so a VolumeMount can say whether it is actually
+	// on the container, rather than whether we asked for it. The two differ for
+	// as long as a recreate takes, and that is exactly the window someone
+	// watching the resource is in.
+	for _, m := range in.Mounts {
+		if m.Type != "bind" {
+			continue
+		}
+		obs.Binds[m.Destination] = m.Source
 	}
 	// Port assignments are read back from our own labels rather than from the
 	// engine's bindings: the label carries the port's name, which is what the

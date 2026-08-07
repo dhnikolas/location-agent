@@ -16,10 +16,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
+	agentapi "scm.x5.ru/dis.cloud/core/location-agent/api"
 	pa "scm.x5.ru/dis.cloud/core/provision-agent/api"
 )
 
@@ -55,12 +57,23 @@ type Port struct {
 	HTTP bool
 }
 
-// Mount is storage attached to the container. Exactly one of Volume or Tmpfs
-// applies: a named volume outlives the container, a tmpfs does not.
+// Mount is storage attached to the container. Exactly one of Volume, Host or
+// Tmpfs applies: a named volume outlives the container, a host directory
+// belongs to the machine and outlives everything, a tmpfs does not.
 type Mount struct {
-	// Volume is the docker volume name, empty for a tmpfs mount.
+	// Volume is the docker volume name, empty for the other two kinds.
 	Volume string
-	Path   string
+	// Host is a directory on the machine, bound in as it is. Set only by a
+	// VolumeMount resource — a template cannot ask for one, because it is
+	// written once for every location and a path on one laptop means nothing on
+	// the next.
+	//
+	// omitempty is load-bearing: the whole Mount goes into the spec hash, so
+	// without it every container that predates this field would hash
+	// differently the moment the agent was upgraded, and every box on every
+	// machine would be recreated once for a field none of them use.
+	Host string `json:"host,omitempty"`
+	Path string
 	// Tmpfs marks an emptyDir, which has no counterpart that survives.
 	Tmpfs bool
 	// SizeLimit is a tmpfs size, passed through from the template.
@@ -97,6 +110,10 @@ type Input struct {
 	// control plane. Supplied by the caller because it is this machine's
 	// configuration, not the template's.
 	AgentEnv map[string]string
+	// HostMounts are the VolumeMount resources pointing at this runtime. The
+	// caller has already dropped the ones it could not honour, so everything
+	// here is meant to end up on the container.
+	HostMounts []*agentapi.VolumeMount
 }
 
 // Plan computes the container a Runtime should have.
@@ -176,6 +193,10 @@ func Plan(in Input) (Container, error) {
 	c.Ports = ports
 
 	mounts, err := planMounts(name, spec.Volumes, spec.Container.VolumeMounts)
+	if err != nil {
+		return Container{}, err
+	}
+	mounts, err = addHostMounts(name, mounts, in.HostMounts)
 	if err != nil {
 		return Container{}, err
 	}
@@ -261,6 +282,77 @@ func planMounts(runtime string, volumes []platform.Volume, mounts []platform.Vol
 		}
 	}
 	return out, nil
+}
+
+// addHostMounts puts the machine's own directories on top of the template's
+// storage.
+//
+// Sorted by resource name so two mounts never swap places between reconciles:
+// the order reaches the spec hash, and a hash that moves on its own would
+// recreate the container forever.
+//
+// A path already used by the template is refused rather than layered over.
+// Docker would accept it and mount the host directory on top, which is how a
+// box loses sight of its own home directory — and the symptom is an empty
+// workspace, nowhere near the cause.
+func addHostMounts(runtime string, mounts []Mount, hostMounts []*agentapi.VolumeMount) ([]Mount, error) {
+	if len(hostMounts) == 0 {
+		return mounts, nil
+	}
+
+	taken := map[string]string{}
+	for _, m := range mounts {
+		taken[filepath.Clean(m.Path)] = "the template"
+	}
+
+	sorted := append([]*agentapi.VolumeMount(nil), hostMounts...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+
+	for _, hm := range sorted {
+		if err := ValidateMount(hm.Spec.HostPath, hm.Spec.ContainerPath); err != nil {
+			return nil, fmt.Errorf("runtime %q: volume mount %q: %w", runtime, hm.Name, err)
+		}
+		path := filepath.Clean(hm.Spec.ContainerPath)
+		if owner, clash := taken[path]; clash {
+			return nil, fmt.Errorf("runtime %q: volume mount %q wants %s, which %s already uses",
+				runtime, hm.Name, path, owner)
+		}
+		taken[path] = "volume mount " + hm.Name
+		mounts = append(mounts, Mount{
+			Host:     filepath.Clean(hm.Spec.HostPath),
+			Path:     path,
+			ReadOnly: hm.Spec.ReadOnly,
+		})
+	}
+	return mounts, nil
+}
+
+// ValidateMount checks what can be judged without touching the machine, so the
+// same rules apply whether a mount is being planned or its resource is being
+// reported on.
+//
+// Whether the host directory exists is deliberately not checked here: that is a
+// question about the machine at this moment, and this file is a function of its
+// arguments.
+func ValidateMount(hostPath, containerPath string) error {
+	if strings.TrimSpace(hostPath) == "" {
+		return fmt.Errorf("hostPath is empty")
+	}
+	if strings.TrimSpace(containerPath) == "" {
+		return fmt.Errorf("containerPath is empty")
+	}
+	if !filepath.IsAbs(hostPath) {
+		return fmt.Errorf("hostPath %q is not absolute", hostPath)
+	}
+	if !filepath.IsAbs(containerPath) {
+		return fmt.Errorf("containerPath %q is not absolute", containerPath)
+	}
+	// "/" would shadow the whole filesystem of the box, including the agent
+	// that serves it. Nothing good follows from allowing it.
+	if filepath.Clean(containerPath) == "/" {
+		return fmt.Errorf("containerPath %q would replace the container's root", containerPath)
+	}
+	return nil
 }
 
 // VolumeName is the docker volume backing one of a runtime's declared volumes.
