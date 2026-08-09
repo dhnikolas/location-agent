@@ -6,8 +6,8 @@ require (
 	github.com/reconcile-kit/api v0.0.16
 	github.com/reconcile-kit/controlloop v0.0.16
 	github.com/reconcile-kit/runtime-manager v0.0.17
-	scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.1
-	scm.x5.ru/dis.cloud/core/provision-agent v0.0.3
+	scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.2
+	scm.x5.ru/dis.cloud/core/provision-agent v0.0.7
 )
 
 require (

@@ -171,14 +171,23 @@ func Plan(in Input) (Container, error) {
 		c.Memory = in.Runtime.Spec.Resources.Memory
 	}
 
-	// Environment, weakest source first: the template describes the image, the
-	// user config personalises it, and the platform's own settings must win —
-	// a user config cannot be allowed to point a runtime at another shard.
+	// Environment, weakest source first.
+	//
+	// The template describes the image, so it goes in first. The user config
+	// personalises every box the user has. The template's own parameters —
+	// what its envSchema asked for, answered by this user — are more specific
+	// than either, so they land on top of both.
+	//
+	// The platform's own settings win over all of it: a user config cannot be
+	// allowed to point a runtime at another shard.
 	for _, e := range spec.Container.Env {
 		c.Env[e.Name] = e.Value
 	}
 	if in.UserConfig != nil {
 		for k, v := range in.UserConfig.Spec.Env {
+			c.Env[k] = v
+		}
+		for k, v := range in.UserConfig.Spec.RuntimeEnvParams[in.Template.Name] {
 			c.Env[k] = v
 		}
 	}
