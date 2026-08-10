@@ -31,11 +31,19 @@ func CheckMount(hostPath, containerPath string) error {
 	if err != nil {
 		return fmt.Errorf("hostPath %q: %w", hostPath, err)
 	}
-	if !info.IsDir() {
+	switch {
+	case info.IsDir():
+	case info.Mode()&os.ModeSocket != 0:
+		// A socket is bound as itself and lives as long as whatever listens on
+		// it — the machine's docker socket is the reason anyone asks for one.
+		// Nothing rewrites a socket the way an editor rewrites a file, so the
+		// objection below does not apply to it.
+	default:
 		// Docker can bind a single file, but a box is given directories to work
 		// in. Allowing files would mean explaining that replacing one from an
-		// editor breaks the mount, which is not worth the feature.
-		return fmt.Errorf("hostPath %q is not a directory", hostPath)
+		// editor breaks the mount — the editor writes a new file, the bind stays
+		// on the old one, and the edits appear not to arrive.
+		return fmt.Errorf("hostPath %q is neither a directory nor a socket", hostPath)
 	}
 	return nil
 }

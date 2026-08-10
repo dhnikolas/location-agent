@@ -1,6 +1,9 @@
 package runtime
 
 import (
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -158,6 +161,31 @@ func TestCheckMountWantsAnExistingDirectory(t *testing.T) {
 	}
 	if err := CheckMount(dir+"/nope", "/work/code"); err == nil {
 		t.Error("expected a missing directory to be refused")
+	}
+}
+
+// A socket is the one thing besides a directory worth binding: a box given the
+// machine's docker talks to the socket itself. A plain file stays refused, for
+// the reason it always was.
+func TestCheckMountAllowsASocket(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "docker.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	if err := CheckMount(sock, "/var/run/docker.sock"); err != nil {
+		t.Errorf("a socket was refused: %v", err)
+	}
+
+	file := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckMount(file, "/work/notes.txt"); err == nil {
+		t.Error("a regular file was accepted")
 	}
 }
 
