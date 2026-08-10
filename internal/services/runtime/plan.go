@@ -110,6 +110,9 @@ type Input struct {
 	// control plane. Supplied by the caller because it is this machine's
 	// configuration, not the template's.
 	AgentEnv map[string]string
+
+	// LocalUserConfig is the machine's own profile, passed to the box verbatim.
+	LocalUserConfig string
 	// HostMounts are the VolumeMount resources pointing at this runtime. The
 	// caller has already dropped the ones it could not honour, so everything
 	// here is meant to end up on the container.
@@ -190,6 +193,12 @@ func Plan(in Input) (Container, error) {
 		for k, v := range in.UserConfig.Spec.RuntimeEnvParams[in.Template.Name] {
 			c.Env[k] = v
 		}
+	}
+	// The machine's own profile, for the agent inside to apply to what it reads
+	// itself. Under the platform's settings, like everything else here: a
+	// profile must not be able to repoint a box at another control plane.
+	if in.LocalUserConfig != "" {
+		c.Env[localUserConfigEnv] = in.LocalUserConfig
 	}
 	for k, v := range in.AgentEnv {
 		c.Env[k] = v
@@ -363,6 +372,11 @@ func ValidateMount(hostPath, containerPath string) error {
 	}
 	return nil
 }
+
+// localUserConfigEnv is where the agent inside a box looks for the profile this
+// machine added. The name is provision-agent's; it is written here because this
+// is the side that fills it in.
+const localUserConfigEnv = "LOCAL_USER_CONFIG"
 
 // VolumeName is the docker volume backing one of a runtime's declared volumes.
 func VolumeName(runtime, volume string) string { return runtime + "-" + volume }

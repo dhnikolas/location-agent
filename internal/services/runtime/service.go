@@ -62,6 +62,12 @@ type Config struct {
 	// AgentEnv is handed to every container so the agent inside can reach the
 	// control plane. Runtime-specific values are added on top.
 	AgentEnv map[string]string
+
+	// LocalUserConfig is the profile this machine keeps, as it was written on
+	// disk. Handed to each box so the agent inside adds the same thing to the
+	// git credentials and MCP values it reads for itself — this agent only
+	// applies it to the environment and the files.
+	LocalUserConfig string
 }
 
 // ProvisionService keeps the runtime's Provision resource in step. Declared
@@ -142,12 +148,13 @@ func (s *Service) Ensure(ctx context.Context, rt *platform.Runtime) (State, erro
 	}
 
 	desired, err := Plan(Input{
-		Runtime:    rt,
-		Template:   tpl,
-		UserConfig: userConfig,
-		Location:   s.cfg.Location,
-		AgentEnv:   s.agentEnv(rt, ports),
-		HostMounts: hostMounts,
+		Runtime:         rt,
+		Template:        tpl,
+		UserConfig:      userConfig,
+		Location:        s.cfg.Location,
+		AgentEnv:        s.agentEnv(rt, ports),
+		LocalUserConfig: s.cfg.LocalUserConfig,
+		HostMounts:      hostMounts,
 	})
 	if err != nil {
 		return State{}, err

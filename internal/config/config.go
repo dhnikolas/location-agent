@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -30,7 +31,11 @@ const (
 	EnvPortMax      = "PORT_MAX"
 	EnvExternalHost = "EXTERNAL_HOST"
 	EnvDockerBinary = "DOCKER_BINARY"
-	EnvDryRun       = "DRY_RUN"
+	// EnvLocalUserConfig is a file this machine keeps for the boxes it runs: a
+	// profile in the platform's own shape, holding what its owner would rather
+	// not put on a platform other people read.
+	EnvLocalUserConfig = "LOCAL_USER_CONFIG_PATH"
+	EnvDryRun          = "DRY_RUN"
 )
 
 type Config struct {
@@ -54,6 +59,10 @@ type Config struct {
 
 	DockerBinary string
 	DryRun       bool
+
+	// LocalUserConfigPath is where that profile lives. Empty, or a file that is
+	// not there, means the machine adds nothing — which is the ordinary case.
+	LocalUserConfigPath string
 }
 
 func Load() (Config, error) {
@@ -67,6 +76,8 @@ func Load() (Config, error) {
 		BindAddress:      envOr(EnvBindAddress, "127.0.0.1"),
 		DockerBinary:     envOr(EnvDockerBinary, "docker"),
 		DryRun:           os.Getenv(EnvDryRun) == "true",
+		LocalUserConfigPath: envOr(EnvLocalUserConfig,
+			filepath.Join(homeDir(), ".location-agent", "user-config.json")),
 	}
 	c.ExternalHost = envOr(EnvExternalHost, c.BindAddress)
 
@@ -114,4 +125,14 @@ func envInt(name string, def int) (int, error) {
 		return 0, fmt.Errorf("%s must be a number, got %q", name, v)
 	}
 	return n, nil
+}
+
+// homeDir is where the agent keeps its own files. Falls back to the working
+// directory when the environment has no home — a machine running the agent as a
+// service may not.
+func homeDir() string {
+	if h, err := os.UserHomeDir(); err == nil && h != "" {
+		return h
+	}
+	return "."
 }

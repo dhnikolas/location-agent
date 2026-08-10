@@ -12,6 +12,7 @@ import (
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
 	agentapi "scm.x5.ru/dis.cloud/core/location-agent/api"
 	pa "scm.x5.ru/dis.cloud/core/provision-agent/api"
+	"scm.x5.ru/dis.cloud/core/provision-agent/pkg/userconfig"
 )
 
 // Set reads resources the agent needs but does not own. The underlying storage
@@ -19,12 +20,15 @@ import (
 type Set struct {
 	set   *cl.StorageSet
 	shard string
+	// local is the profile this machine keeps for the boxes it runs, mixed into
+	// the platform's on the way out. Nil when the machine keeps none.
+	local *pa.UserConfig
 }
 
 // New takes the location this agent serves: listing is shard-wide, and without
 // it a machine would plan its containers from every other machine's resources
-// too.
-func New(shard string) *Set { return &Set{shard: shard} }
+// too. The local profile is what this machine adds to every profile it reads.
+func New(shard string, local *pa.UserConfig) *Set { return &Set{shard: shard, local: local} }
 
 func (s *Set) Bind(set *cl.StorageSet) { s.set = set }
 
@@ -60,7 +64,11 @@ func (s *Set) UserConfig(ctx context.Context, name string) (*pa.UserConfig, bool
 	if err != nil {
 		return nil, false, fmt.Errorf("get user config %q: %w", name, err)
 	}
-	return uc, exist, nil
+	if !exist {
+		return nil, false, nil
+	}
+	// The platform's profile is what a box has; this machine's only adds to it.
+	return userconfig.Merge(uc, s.local), true, nil
 }
 
 // VolumeMounts lists the host directories asked for a runtime.

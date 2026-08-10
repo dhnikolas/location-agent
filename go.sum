@@ -105,3 +105,5 @@ scm.x5.ru/dis.cloud/core/provision-agent v0.0.3 h1:2Y0gCTQDriJSYyo/0o/h/9t0w7xZt
 scm.x5.ru/dis.cloud/core/provision-agent v0.0.3/go.mod h1:qdXFBl3mSDmtzvOjhMnzhjh+SzwWesREV0Y5G9DJxLg=
 scm.x5.ru/dis.cloud/core/provision-agent v0.0.7 h1:P5n1eSl18MZH6WsvbJZV1kKiYhvqoxzdPoK5mQ7e4v4=
 scm.x5.ru/dis.cloud/core/provision-agent v0.0.7/go.mod h1:xGH836c9gNTN1nDR64fMwhgl7fGcCTyqV2dCUuurKg8=
+scm.x5.ru/dis.cloud/core/provision-agent v0.0.9 h1:9GGCit6/OenHYUDVwZYSb9bMNLUV9WYWcwAxHeAfbP8=
+scm.x5.ru/dis.cloud/core/provision-agent v0.0.9/go.mod h1:xGH836c9gNTN1nDR64fMwhgl7fGcCTyqV2dCUuurKg8=

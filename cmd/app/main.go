@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -29,6 +30,7 @@ import (
 	runtimesvc "scm.x5.ru/dis.cloud/core/location-agent/internal/services/runtime"
 	"scm.x5.ru/dis.cloud/core/location-agent/pkg/logger"
 	pa "scm.x5.ru/dis.cloud/core/provision-agent/api"
+	"scm.x5.ru/dis.cloud/core/provision-agent/pkg/userconfig"
 )
 
 var Version string
@@ -140,7 +142,23 @@ func startManager(
 		log.Fatalf("register Provision remote client: %v", err)
 	}
 
-	resources := storage.New(cfg.ShardID)
+	// The profile this machine keeps for the boxes it runs, if it keeps one.
+	// Read once: it is mixed into every profile the platform hands out, and
+	// passed into each box so the agent inside applies the same thing to the
+	// git credentials and MCP values it reads for itself.
+	//
+	// A malformed one stops the agent here. Carrying on would place boxes on
+	// the platform's credentials while their owner believes they replaced them.
+	localUserConfig, localUserConfigRaw, err := loadLocalUserConfig(cfg.LocalUserConfigPath)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	if localUserConfig != nil {
+		slogger.Info("local user config found — added to every profile on this machine",
+			"path", cfg.LocalUserConfigPath)
+	}
+
+	resources := storage.New(cfg.ShardID, localUserConfig)
 
 	var containers runtimesvc.ContainerRepository = container.NewDocker(cfg.DockerBinary, cfg.BindAddress, slogger)
 	if cfg.DryRun {
@@ -150,12 +168,13 @@ func startManager(
 	provisionSvc := provisionsvc.New(resources, slogger)
 
 	svc := runtimesvc.New(runtimesvc.Config{
-		Location:     cfg.ShardID,
-		BindAddress:  cfg.BindAddress,
-		ExternalHost: cfg.ExternalHost,
-		PortMin:      cfg.PortMin,
-		PortMax:      cfg.PortMax,
-		AgentEnv:     agentEnv(cfg),
+		Location:        cfg.ShardID,
+		BindAddress:     cfg.BindAddress,
+		ExternalHost:    cfg.ExternalHost,
+		PortMin:         cfg.PortMin,
+		PortMax:         cfg.PortMax,
+		AgentEnv:        agentEnv(cfg),
+		LocalUserConfig: localUserConfigRaw,
 	}, resources, containers, provisionSvc, slogger)
 
 	if err := rtm.SetController[*platform.Runtime](mgr,
@@ -221,4 +240,31 @@ func itoa(v int) string {
 		v /= 10
 	}
 	return string(buf[i:])
+}
+
+// loadLocalUserConfig reads the profile this machine adds to the platform's.
+//
+// A missing file is the ordinary case and not a failure: most machines keep
+// none. A file that is there and cannot be read, or holds something that is not
+// a profile, is refused — it was put there on purpose, and ignoring it would
+// leave its owner believing it applied.
+func loadLocalUserConfig(path string) (*pa.UserConfig, string, error) {
+	if path == "" {
+		return nil, "", nil
+	}
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("read local user config %q: %w", path, err)
+	}
+	uc, err := userconfig.Parse(string(raw))
+	if err != nil {
+		return nil, "", fmt.Errorf("local user config %q: %w", path, err)
+	}
+	if uc == nil {
+		return nil, "", nil
+	}
+	return uc, string(raw), nil
 }
