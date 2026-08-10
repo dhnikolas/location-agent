@@ -152,6 +152,13 @@ func sameHostPath(reported, want string) bool {
 	if reported == want {
 		return true
 	}
+	// The engine's own socket. Docker Desktop does not pass the machine's
+	// /var/run/docker.sock through the share at all — it answers on a proxy
+	// socket of its own inside the VM and reports that path instead. Nothing
+	// about the bind is wrong; only the name it comes back under.
+	if reported == desktopDockerProxySocket && isDockerSocket(want) {
+		return true
+	}
 	// Docker Desktop's share, and only as a prefix: a directory genuinely named
 	// /host_mnt/... on the machine still compares equal above.
 	return strings.TrimPrefix(reported, desktopSharePrefix) == want
@@ -159,6 +166,22 @@ func sameHostPath(reported, want string) bool {
 
 // desktopSharePrefix is where Docker Desktop's VM sees the machine's files.
 const desktopSharePrefix = "/host_mnt"
+
+// desktopDockerProxySocket is what Docker Desktop binds when it is asked for
+// the machine's docker socket.
+const desktopDockerProxySocket = "/run/host-services/docker.proxy.sock"
+
+// isDockerSocket reports whether a path is one of the names the engine's socket
+// goes by on a machine. Narrow on purpose: the substitution above is only
+// believable for the socket Docker Desktop actually proxies, and treating any
+// unrecognised path as equal to it would report a mount as ready that is not.
+func isDockerSocket(path string) bool {
+	switch path {
+	case "/var/run/docker.sock", "/run/docker.sock":
+		return true
+	}
+	return false
+}
 
 // equalStatus reports whether anything worth writing back changed. Without it
 // every tick would be a write, for a resource whose whole life is spent not
