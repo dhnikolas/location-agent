@@ -7,6 +7,7 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"strings"
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
 	agentapi "scm.x5.ru/dis.cloud/core/location-agent/api"
@@ -59,6 +60,11 @@ type Config struct {
 	ExternalHost string
 	PortMin      int
 	PortMax      int
+	// LocalPortMin and LocalPortCount are the ports every box gets for whatever
+	// its user runs inside. Published with the same number on both sides, so
+	// the address the box reports is the address the machine answers on.
+	LocalPortMin   int
+	LocalPortCount int
 	// AgentEnv is handed to every container so the agent inside can reach the
 	// control plane. Runtime-specific values are added on top.
 	AgentEnv map[string]string
@@ -265,7 +271,29 @@ func (s *Service) agentEnv(rt *platform.Runtime, ports map[string]int) map[strin
 		env["SSH_ADVERTISE_PORT"] = strconv.Itoa(p)
 		env["SSH_ADVERTISE_HOST"] = s.cfg.ExternalHost
 	}
+	// The ports the box may use for its own work. Published with the same
+	// number on both sides, so this list is both what to bind to inside and
+	// what to open on the machine.
+	if list := localPortList(ports, s.cfg.LocalPortCount); list != "" {
+		env[LocalPortEnv] = list
+	}
 	return env
+}
+
+// localPortList is the box's own ports, in the order they were asked for.
+// Ordered rather than sorted: "the first one" has to mean the same thing to
+// whoever reads it and to whoever assigned it, and numerically they may not be
+// consecutive when something else on the machine holds one.
+func localPortList(ports map[string]int, count int) string {
+	out := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		p, ok := ports[LocalPortName(i)]
+		if !ok {
+			break
+		}
+		out = append(out, strconv.Itoa(p))
+	}
+	return strings.Join(out, ",")
 }
 
 // assignPorts picks host ports, keeping any a running container already has.
@@ -313,6 +341,22 @@ func (s *Service) assignPorts(ctx context.Context, runtime string, tpl *platform
 		assigned[p.Name] = host
 		taken[host] = true
 	}
+
+	// The box's own ports, from their own range. Kept out of the pool above so
+	// they stay low and memorable: somebody opens one in a browser, and 19080
+	// is a better thing to be told than whatever the pool had spare.
+	for i := 0; i < s.cfg.LocalPortCount; i++ {
+		name := LocalPortName(i)
+		if _, ok := assigned[name]; ok {
+			continue
+		}
+		host, err := s.freePortIn(taken, s.cfg.LocalPortMin, s.cfg.LocalPortMin+localPortSearchSpan)
+		if err != nil {
+			return nil, fmt.Errorf("runtime %q port %q: %w", runtime, name, err)
+		}
+		assigned[name] = host
+		taken[host] = true
+	}
 	return assigned, nil
 }
 
@@ -320,7 +364,14 @@ func (s *Service) assignPorts(ctx context.Context, runtime string, tpl *platform
 // by something else on this machine. Checking the machine matters: a laptop
 // runs plenty that the agent knows nothing about.
 func (s *Service) freePort(taken map[int]bool) (int, error) {
-	for p := s.cfg.PortMin; p <= s.cfg.PortMax; p++ {
+	return s.freePortIn(taken, s.cfg.PortMin, s.cfg.PortMax)
+}
+
+// freePortIn is the same search over an explicit range: the box's own ports
+// come from their own, and mixing the two would put them wherever the pool
+// happened to be free.
+func (s *Service) freePortIn(taken map[int]bool, min, max int) (int, error) {
+	for p := min; p <= max; p++ {
 		if taken[p] {
 			continue
 		}
@@ -331,7 +382,7 @@ func (s *Service) freePort(taken map[int]bool) (int, error) {
 		_ = l.Close()
 		return p, nil
 	}
-	return 0, fmt.Errorf("no free port in %d-%d", s.cfg.PortMin, s.cfg.PortMax)
+	return 0, fmt.Errorf("no free port in %d-%d", min, max)
 }
 
 func applyHostPorts(c *Container, ports map[string]int) {
@@ -339,6 +390,20 @@ func applyHostPorts(c *Container, ports map[string]int) {
 		host := ports[c.Ports[i].Name]
 		c.Ports[i].Host = host
 		c.Labels[LabelPort+c.Ports[i].Name] = strconv.Itoa(host)
+	}
+
+	// The box's own ports are added here rather than planned: their number
+	// inside is the number they were given outside, and that is not known until
+	// the allocator has run. Added in the order they were asked for, which is
+	// the order the box is told about them.
+	for i := 0; ; i++ {
+		name := LocalPortName(i)
+		host, ok := ports[name]
+		if !ok {
+			break
+		}
+		c.Ports = append(c.Ports, Port{Name: name, Container: host, Host: host})
+		c.Labels[LabelPort+name] = strconv.Itoa(host)
 	}
 }
 

@@ -35,7 +35,14 @@ const (
 	// profile in the platform's own shape, holding what its owner would rather
 	// not put on a platform other people read.
 	EnvLocalUserConfig = "LOCAL_USER_CONFIG_PATH"
-	EnvDryRun          = "DRY_RUN"
+
+	// EnvLocalPortMin is where the search for a box's own ports starts. These
+	// are published with the same number inside and out, so whatever a person
+	// starts in a box on one of them is reachable from the machine at the
+	// address the box itself reports.
+	EnvLocalPortMin   = "LOCAL_PORT_MIN"
+	EnvLocalPortCount = "LOCAL_PORT_COUNT"
+	EnvDryRun         = "DRY_RUN"
 )
 
 type Config struct {
@@ -63,6 +70,15 @@ type Config struct {
 	// LocalUserConfigPath is where that profile lives. Empty, or a file that is
 	// not there, means the machine adds nothing — which is the ordinary case.
 	LocalUserConfigPath string
+
+	// LocalPortMin and LocalPortCount describe the ports handed to every box
+	// for whatever its user runs inside — a dev server, a debugger.
+	//
+	// Fixed here for now. They belong on the runtime, so a box could ask for
+	// what it needs; until that exists every box gets the same handful, which
+	// is enough to work with and cheap to take back.
+	LocalPortMin   int
+	LocalPortCount int
 }
 
 func Load() (Config, error) {
@@ -83,6 +99,12 @@ func Load() (Config, error) {
 
 	var err error
 	if c.PortMin, err = envInt(EnvPortMin, 31000); err != nil {
+		return Config{}, err
+	}
+	if c.LocalPortMin, err = envInt(EnvLocalPortMin, 19080); err != nil {
+		return Config{}, err
+	}
+	if c.LocalPortCount, err = envInt(EnvLocalPortCount, 5); err != nil {
 		return Config{}, err
 	}
 	if c.PortMax, err = envInt(EnvPortMax, 32000); err != nil {

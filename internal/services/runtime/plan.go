@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
@@ -46,6 +47,31 @@ const (
 	// actually wants to run. agentctl finds this machine's boxes with it.
 	LabelPlatform = "agent-platform"
 )
+
+// A box gets a few ports of its own, published with the same number inside and
+// out. The point is the sameness: something started on 19080 in a box is on
+// 19080 on the machine, so the number the box prints is the number that works,
+// and nobody has to translate.
+//
+// Their names are ours, not a template's — no template declares them — and they
+// are what keeps an allocation stable: a running container's ports are read
+// back by name, so a box keeps the ones it already has.
+const (
+	// LocalPortPrefix names them. Kept distinct from anything a template would
+	// call a port, which is a word like "ssh" or "api".
+	LocalPortPrefix = "local-"
+
+	// LocalPortEnv tells the box which ones it got, in the order they were
+	// asked for. Read inside, so it lists what to bind to there.
+	LocalPortEnv = "LOCAL_CONTAINER_PORT_RANGE"
+
+	// localPortSearchSpan bounds the search above the first port. Wide enough
+	// for many boxes on one machine, narrow enough that the numbers stay short.
+	localPortSearchSpan = 919
+)
+
+// LocalPortName is the name the nth local port is recorded under.
+func LocalPortName(i int) string { return LocalPortPrefix + strconv.Itoa(i) }
 
 // Port is one published port.
 type Port struct {

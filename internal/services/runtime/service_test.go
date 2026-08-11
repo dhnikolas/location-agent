@@ -108,7 +108,8 @@ func testService(t *testing.T, containers ContainerRepository) (*Service, *fakeP
 		},
 	}
 	prov := &fakeProvision{}
-	svc := New(Config{Location: "nikolai-laptop", BindAddress: "127.0.0.1", PortMin: 31000, PortMax: 31010},
+	svc := New(Config{Location: "nikolai-laptop", BindAddress: "127.0.0.1", PortMin: 31000, PortMax: 31010,
+		LocalPortMin: 19080, LocalPortCount: 5},
 		fakeResources{tpl: tpl}, containers, prov, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return svc, prov
 }
@@ -211,5 +212,71 @@ func TestContainerCarriesTheShortPlatformLabel(t *testing.T) {
 	}
 	if labels[LabelPlatform] != labels[LabelLocation] {
 		t.Errorf("the two spellings disagree: %q vs %q", labels[LabelPlatform], labels[LabelLocation])
+	}
+}
+
+// A box gets a handful of ports of its own, searched for from a low, fixed
+// number rather than taken from the pool the platform's own ports come from.
+// The number is the point: somebody opens 19080 in a browser, and being told
+// 31007 instead would defeat it.
+func TestLocalPortsStartAtTheirOwnNumber(t *testing.T) {
+	containers := &fakeContainers{}
+	svc, _ := testService(t, containers)
+
+	tpl := &platform.RuntimeTemplate{}
+	ports, err := svc.assignPorts(context.Background(), "new-dev", tpl, Observed{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 5; i++ {
+		name := LocalPortName(i)
+		p, ok := ports[name]
+		if !ok {
+			t.Fatalf("%s was not assigned: %v", name, ports)
+		}
+		if p < 19080 || p > 19080+localPortSearchSpan {
+			t.Errorf("%s = %d, want it from the box's own range", name, p)
+		}
+	}
+}
+
+// The list is what a box is told to use, in the order it was asked for. Order
+// rather than sorting: numbers can be non-consecutive when the machine is
+// already holding one, and "the first port" must mean the same thing on both
+// sides.
+func TestLocalPortListKeepsTheOrderAsked(t *testing.T) {
+	ports := map[string]int{
+		LocalPortName(0): 19080,
+		LocalPortName(1): 19082, // 19081 was busy
+		LocalPortName(2): 19083,
+		"ssh":            31001,
+	}
+	if got := localPortList(ports, 3); got != "19080,19082,19083" {
+		t.Errorf("localPortList = %q", got)
+	}
+	// Nothing assigned is not an empty list but no variable at all.
+	if got := localPortList(map[string]int{}, 3); got != "" {
+		t.Errorf("localPortList with none = %q", got)
+	}
+}
+
+// Published with the same number on both sides, so the address the box reports
+// is the address the machine answers on. A different number inside would make
+// the variable a lie to whoever reads it there.
+func TestLocalPortsArePublishedAsThemselves(t *testing.T) {
+	c := Container{Labels: map[string]string{}}
+	applyHostPorts(&c, map[string]int{LocalPortName(0): 19080, LocalPortName(1): 19081})
+
+	if len(c.Ports) != 2 {
+		t.Fatalf("ports = %+v", c.Ports)
+	}
+	for _, p := range c.Ports {
+		if p.Container != p.Host {
+			t.Errorf("%s: container %d, host %d — they must match", p.Name, p.Container, p.Host)
+		}
+	}
+	if c.Labels[LabelPort+LocalPortName(0)] != "19080" {
+		t.Errorf("labels = %v", c.Labels)
 	}
 }

@@ -173,6 +173,8 @@ func startManager(
 		ExternalHost:    cfg.ExternalHost,
 		PortMin:         cfg.PortMin,
 		PortMax:         cfg.PortMax,
+		LocalPortMin:    cfg.LocalPortMin,
+		LocalPortCount:  cfg.LocalPortCount,
 		AgentEnv:        agentEnv(cfg),
 		LocalUserConfig: localUserConfigRaw,
 	}, resources, containers, provisionSvc, slogger)
