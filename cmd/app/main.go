@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -268,5 +269,22 @@ func loadLocalUserConfig(path string) (*pa.UserConfig, string, error) {
 	if uc == nil {
 		return nil, "", nil
 	}
-	return uc, string(raw), nil
+
+	// Handed on as one line, not as it was written.
+	//
+	// The profile travels to the box in an environment variable, and a variable
+	// with a newline in it does not survive the journey intact: the agent in a
+	// salty-claw box is started through s6-envdir, which is daemontools' format
+	// — the value is the first line of the file and the rest is dropped. A
+	// pretty-printed profile arrived as "{" and stopped the box, which is what a
+	// malformed profile is meant to do, except this one was fine.
+	//
+	// Compacted rather than forbidden: the file is written by a person and
+	// should stay readable. env-files, systemd units and docker --env-file have
+	// the same trouble with newlines, so this is not only about s6.
+	compact, err := json.Marshal(uc.Spec)
+	if err != nil {
+		return nil, "", fmt.Errorf("local user config %q: %w", path, err)
+	}
+	return uc, string(compact), nil
 }
