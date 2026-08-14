@@ -80,7 +80,11 @@ type Port struct {
 	Container int
 	// Host is what it is published on. Assigned by the allocator.
 	Host int
-	HTTP bool
+	// Wanted is the number the spec asked to be published on, zero when it did
+	// not care. Kept apart from Host so the two can be compared: Host is what a
+	// machine agreed to, Wanted is what was asked for.
+	Wanted int
+	HTTP   bool
 }
 
 // Mount is storage attached to the container. Exactly one of Volume, Host or
@@ -275,6 +279,7 @@ func mergePorts(runtime string, fromTemplate, fromRuntime []platform.PortSpec) (
 		out = append(out, Port{
 			Name:      p.Name,
 			Container: int(p.Port),
+			Wanted:    int(p.HostPort),
 			HTTP:      p.Protocol == platform.PortProtocolHTTP,
 		})
 	}
@@ -417,6 +422,14 @@ func (c Container) Hash() string {
 		Name      string `json:"name"`
 		Container int    `json:"container"`
 		HTTP      bool   `json:"http"`
+		// Wanted is here and Host is not: what a machine assigned is the
+		// machine's business, but a number the spec asked for is part of the
+		// desired state, and changing it has to recreate the container.
+		//
+		// omitempty on purpose: without it every container that pins nothing
+		// would get a new hash the day this field appeared, and every box on
+		// every machine would be recreated once for a feature none of them use.
+		Wanted int `json:"wanted,omitempty"`
 	}
 	payload := struct {
 		Image   string            `json:"image"`
@@ -439,7 +452,7 @@ func (c Container) Hash() string {
 		Mounts:  append([]Mount(nil), c.Mounts...),
 	}
 	for _, p := range c.Ports {
-		payload.Ports = append(payload.Ports, port{Name: p.Name, Container: p.Container, HTTP: p.HTTP})
+		payload.Ports = append(payload.Ports, port{Name: p.Name, Container: p.Container, HTTP: p.HTTP, Wanted: p.Wanted})
 	}
 	// Order must not affect the fingerprint, or an unchanged runtime would be
 	// recreated whenever a map iterated differently.

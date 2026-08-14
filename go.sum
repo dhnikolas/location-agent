@@ -101,6 +101,8 @@ scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.1 h1:s+i5xGXByvHTUQR1oHQudpVZ
 scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.1/go.mod h1:mYlnVH8N9wnwM3nFwfN9DeJ8AqmocORy7edzhRWwTU8=
 scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.2 h1:ne9ItsMxKyw2Tcqt2sSXrYveMOueWh5PkTZaB5pj03s=
 scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.2/go.mod h1:mYlnVH8N9wnwM3nFwfN9DeJ8AqmocORy7edzhRWwTU8=
+scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.3 h1:b8bFZxkwyyoKx0RXNAjJ/M8/WV8mpmypGa3Jt5tQWtY=
+scm.x5.ru/dis.cloud/core/agent-platform-cloop v0.0.3/go.mod h1:z0eHbLhUkpMcIC8PODf782K8zms1pI3Fb6xyK0LZDC4=
 scm.x5.ru/dis.cloud/core/provision-agent v0.0.3 h1:2Y0gCTQDriJSYyo/0o/h/9t0w7xZtj9croKBF9kWJfI=
 scm.x5.ru/dis.cloud/core/provision-agent v0.0.3/go.mod h1:qdXFBl3mSDmtzvOjhMnzhjh+SzwWesREV0Y5G9DJxLg=
 scm.x5.ru/dis.cloud/core/provision-agent v0.0.7 h1:P5n1eSl18MZH6WsvbJZV1kKiYhvqoxzdPoK5mQ7e4v4=

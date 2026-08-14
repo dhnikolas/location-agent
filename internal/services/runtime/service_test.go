@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	platform "scm.x5.ru/dis.cloud/core/agent-platform-cloop/api"
@@ -14,6 +15,9 @@ import (
 // fakeContainers records what the service asked the engine to do. Only the
 // calls these tests reason about are remembered.
 type fakeContainers struct {
+	// others are the containers of other runtimes on this machine, which is
+	// what makes a port count as taken.
+	others    []Observed
 	existing  *Observed
 	removed   []removal
 	volumes   []volumeCall
@@ -38,7 +42,7 @@ func (f *fakeContainers) Find(context.Context, string) (Observed, bool, error) {
 	return *f.existing, true, nil
 }
 
-func (f *fakeContainers) List(context.Context) ([]Observed, error) { return nil, nil }
+func (f *fakeContainers) List(context.Context) ([]Observed, error) { return f.others, nil }
 
 func (f *fakeContainers) EnsureVolume(_ context.Context, runtime, name string) error {
 	f.volumes = append(f.volumes, volumeCall{runtime, name})
@@ -278,5 +282,99 @@ func TestLocalPortsArePublishedAsThemselves(t *testing.T) {
 	}
 	if c.Labels[LabelPort+LocalPortName(0)] != "19080" {
 		t.Errorf("labels = %v", c.Labels)
+	}
+}
+
+// A spec that names a number gets that number. The point of asking is that an
+// application only works on one of them, so a convenient substitute is not an
+// answer.
+func TestPinnedPortIsPublishedAsAsked(t *testing.T) {
+	containers := &fakeContainers{}
+	svc, _ := testService(t, containers)
+
+	tpl := &platform.RuntimeTemplate{Spec: platform.RuntimeTemplateSpec{
+		Container: platform.ContainerSpec{Ports: []platform.PortSpec{
+			{Name: "opencode", Port: 1455, HostPort: 1455},
+			{Name: "api", Port: 8080},
+		}},
+	}}
+
+	ports, err := svc.assignPorts(context.Background(), "new-dev", tpl, Observed{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ports["opencode"] != 1455 {
+		t.Errorf("opencode = %d, want the number the spec asked for", ports["opencode"])
+	}
+	// Everything that asked for nothing still comes from the pool.
+	if p := ports["api"]; p < 31000 || p > 31010 {
+		t.Errorf("api = %d, want one from the pool", p)
+	}
+}
+
+// The number is in the spec hash, so a pin that lost to an old assignment would
+// recreate the container on every pass and never arrive. The pin wins.
+func TestPinnedPortBeatsWhatTheContainerAlreadyHas(t *testing.T) {
+	containers := &fakeContainers{}
+	svc, _ := testService(t, containers)
+
+	tpl := &platform.RuntimeTemplate{Spec: platform.RuntimeTemplateSpec{
+		Container: platform.ContainerSpec{Ports: []platform.PortSpec{
+			{Name: "opencode", Port: 1455, HostPort: 1455},
+		}},
+	}}
+	running := Observed{Ports: map[string]int{"opencode": 31002}}
+
+	ports, err := svc.assignPorts(context.Background(), "new-dev", tpl, running, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ports["opencode"] != 1455 {
+		t.Errorf("opencode = %d, want the pin to win over the old assignment", ports["opencode"])
+	}
+}
+
+// Held by another box on this machine: refused rather than substituted, because
+// substituting is the failure the field exists to prevent.
+func TestPinnedPortRefusesWhenTaken(t *testing.T) {
+	containers := &fakeContainers{others: []Observed{
+		{Name: "other-box", Ports: map[string]int{"opencode": 1455}},
+	}}
+	svc, _ := testService(t, containers)
+
+	tpl := &platform.RuntimeTemplate{Spec: platform.RuntimeTemplateSpec{
+		Container: platform.ContainerSpec{Ports: []platform.PortSpec{
+			{Name: "opencode", Port: 1455, HostPort: 1455},
+		}},
+	}}
+
+	_, err := svc.assignPorts(context.Background(), "new-dev", tpl, Observed{}, false)
+	if err == nil {
+		t.Fatal("a port another box holds was handed out anyway")
+	}
+	if !strings.Contains(err.Error(), "1455") {
+		t.Errorf("the error does not say which port: %v", err)
+	}
+}
+
+// A running container keeps the port it was pinned to: it is not free, but it
+// is not somebody else's either.
+func TestPinnedPortSurvivesItsOwnContainer(t *testing.T) {
+	containers := &fakeContainers{}
+	svc, _ := testService(t, containers)
+
+	tpl := &platform.RuntimeTemplate{Spec: platform.RuntimeTemplateSpec{
+		Container: platform.ContainerSpec{Ports: []platform.PortSpec{
+			{Name: "opencode", Port: 1455, HostPort: 1455},
+		}},
+	}}
+	running := Observed{Ports: map[string]int{"opencode": 1455}}
+
+	ports, err := svc.assignPorts(context.Background(), "new-dev", tpl, running, true)
+	if err != nil {
+		t.Fatalf("a box was refused the port it is already using: %v", err)
+	}
+	if ports["opencode"] != 1455 {
+		t.Errorf("opencode = %d", ports["opencode"])
 	}
 }

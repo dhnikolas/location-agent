@@ -318,10 +318,13 @@ func (s *Service) assignPorts(ctx context.Context, runtime string, tpl *platform
 		}
 	}
 
+	// What this runtime's own container already holds. Kept apart from taken:
+	// its ports are not free, but they are not somebody else's either, and a
+	// port it is sitting on must not read as a conflict with itself.
+	mine := map[int]bool{}
 	if hasExisting {
-		for name, p := range existing.Ports {
-			assigned[name] = p
-			taken[p] = true
+		for _, p := range existing.Ports {
+			mine[p] = true
 		}
 	}
 
@@ -329,6 +332,35 @@ func (s *Service) assignPorts(ctx context.Context, runtime string, tpl *platform
 	// the result reproducible and the logs comparable.
 	wanted := append([]platform.PortSpec(nil), tpl.Spec.Container.Ports...)
 	sort.Slice(wanted, func(i, j int) bool { return wanted[i].Name < wanted[j].Name })
+
+	// Pinned ports first, and before anything the running container holds: a
+	// spec that asks for a number must get that number or an error. Letting the
+	// old assignment win would recreate the container on every pass — the
+	// number is in the spec hash, so the desired state would never be reached
+	// and never stop being tried.
+	for _, p := range wanted {
+		if p.HostPort <= 0 {
+			continue
+		}
+		host := int(p.HostPort)
+		if err := s.checkPinned(host, taken, mine); err != nil {
+			return nil, fmt.Errorf("runtime %q port %q: %w", runtime, p.Name, err)
+		}
+		assigned[p.Name] = host
+		taken[host] = true
+	}
+
+	// Everything else keeps what it has, so an address already handed out does
+	// not move under whoever is using it.
+	if hasExisting {
+		for name, p := range existing.Ports {
+			if _, pinned := assigned[name]; pinned {
+				continue
+			}
+			assigned[name] = p
+			taken[p] = true
+		}
+	}
 
 	for _, p := range wanted {
 		if _, ok := assigned[p.Name]; ok {
@@ -358,6 +390,26 @@ func (s *Service) assignPorts(ctx context.Context, runtime string, tpl *platform
 		taken[host] = true
 	}
 	return assigned, nil
+}
+
+// checkPinned reports whether a requested number can be published.
+//
+// A port this runtime's own container already holds is available to it: the
+// listen test below would fail on it, because the container holding it is the
+// one being reconciled.
+func (s *Service) checkPinned(host int, taken, mine map[int]bool) error {
+	if mine[host] {
+		return nil
+	}
+	if taken[host] {
+		return fmt.Errorf("port %d is asked for but another box on this machine has it", host)
+	}
+	l, err := net.Listen("tcp", net.JoinHostPort(s.cfg.BindAddress, strconv.Itoa(host)))
+	if err != nil {
+		return fmt.Errorf("port %d is asked for but something on this machine is using it", host)
+	}
+	_ = l.Close()
+	return nil
 }
 
 // freePort finds a port that is neither claimed by another runtime nor in use
